@@ -1,0 +1,8 @@
+services:
+  scheduler:
+    build: .
+    restart: unless-stopped
+    environment:
+      - PG_DSN=${PG_DSN}
+    volumes:
+      - ./logs:/app/logs
