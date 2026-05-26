@@ -34,6 +34,26 @@ CREATE TABLE IF NOT EXISTS t_stock_spot (
     updated_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     PRIMARY KEY (stock_code)
 );
+COMMENT ON TABLE  t_stock_spot                    IS 'A股实时行情快照';
+COMMENT ON COLUMN t_stock_spot.stock_code         IS '股票代码';
+COMMENT ON COLUMN t_stock_spot.stock_name         IS '股票名称';
+COMMENT ON COLUMN t_stock_spot.price              IS '现价/收盘价(元)';
+COMMENT ON COLUMN t_stock_spot.change_pct         IS '涨跌幅(%)';
+COMMENT ON COLUMN t_stock_spot.change_amt         IS '涨跌额(元)';
+COMMENT ON COLUMN t_stock_spot.volume             IS '成交量(手)';
+COMMENT ON COLUMN t_stock_spot.amount             IS '成交额(元)';
+COMMENT ON COLUMN t_stock_spot.amplitude          IS '振幅(%)';
+COMMENT ON COLUMN t_stock_spot.turnover_rate      IS '换手率(%)';
+COMMENT ON COLUMN t_stock_spot.pe_ttm             IS '市盈率TTM';
+COMMENT ON COLUMN t_stock_spot.volume_ratio       IS '量比';
+COMMENT ON COLUMN t_stock_spot.high               IS '最高价(元)';
+COMMENT ON COLUMN t_stock_spot.low                IS '最低价(元)';
+COMMENT ON COLUMN t_stock_spot.open               IS '开盘价(元)';
+COMMENT ON COLUMN t_stock_spot.pre_close          IS '昨收价(元)';
+COMMENT ON COLUMN t_stock_spot.total_market       IS '总市值(元)';
+COMMENT ON COLUMN t_stock_spot.circ_market        IS '流通市值(元)';
+COMMENT ON COLUMN t_stock_spot.pb                 IS '市净率PB';
+COMMENT ON COLUMN t_stock_spot.updated_at         IS '最后更新时间';
 """
 
 _UPSERT_SQL = """

@@ -27,8 +27,8 @@ from levistock.utils.trade_day import is_trade_day
 logger = logging.getLogger(__name__)
 
 _TRADING_SESSIONS = [
-    (datetime.time(9, 30), datetime.time(11, 30)),
-    (datetime.time(13, 0), datetime.time(15, 0)),
+    (datetime.time(9, 25), datetime.time(11, 31)),
+    (datetime.time(13, 0), datetime.time(15, 1)),
 ]
 
 

@@ -10,8 +10,6 @@ DSN = "postgresql://user:password@localhost:5432/dbname"
 
 
 data = stocks_all_em(filter_st=False)
-print(data[0])
-print(len(data))
 
 count = save_stocks_spot(data, dsn=DSN)
 print(f"UPSERT {count} 条记录")

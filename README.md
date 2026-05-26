@@ -33,6 +33,74 @@ lk.sector_em()
 
 ---
 
+## 定时采集 & Docker 部署
+
+将 A 股实时行情定时写入 PostgreSQL，适合量化数据底座场景。
+
+### 1. 建表
+
+```sql
+CREATE TABLE IF NOT EXISTS t_stock_spot (
+    stock_code      VARCHAR(10)  NOT NULL,
+    stock_name      VARCHAR(50),
+    price           NUMERIC(12, 4),
+    change_pct      NUMERIC(8, 4),
+    change_amt      NUMERIC(12, 4),
+    volume          BIGINT,
+    amount          NUMERIC(20, 4),
+    amplitude       NUMERIC(8, 4),
+    turnover_rate   NUMERIC(8, 4),
+    pe_ttm          NUMERIC(12, 4),
+    volume_ratio    NUMERIC(8, 4),
+    high            NUMERIC(12, 4),
+    low             NUMERIC(12, 4),
+    open            NUMERIC(12, 4),
+    pre_close       NUMERIC(12, 4),
+    total_market    BIGINT,
+    circ_market     BIGINT,
+    pb              NUMERIC(12, 4),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (stock_code)
+);
+```
+
+### 2. 配置环境变量
+
+新建 `.env`（不要提交到 Git）：
+
+```env
+PG_DSN=postgresql://user:password@host:5432/dbname
+```
+
+### 3. Docker 启动
+
+```bash
+# 构建镜像
+docker compose build
+
+# 后台启动（自动读取 .env）
+docker compose --env-file .env up -d
+
+# 查看实时日志
+docker compose logs -f scheduler
+
+# 停止
+docker compose down
+```
+
+容器配置了 `restart: unless-stopped`，崩溃后自动重启，手动 `down` 才会停止。
+
+### 4. 本地直接运行
+
+```bash
+export $(cat .env | xargs)
+python run_scheduler.py
+```
+
+调度器启动后立即执行一次，之后按设定间隔（默认 20 秒）循环采集，仅在 A 股交易时段（9:30–11:30 / 13:00–15:00）执行，非交易日自动退出。
+
+---
+
 ## 接口文档
 
 ### 目录
