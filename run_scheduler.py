@@ -13,6 +13,9 @@
 import logging
 import os
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from levistock.stock.stock_em import stocks_all_em
 from levistock.utils.db import save_stocks_spot
 from levistock.utils.scheduler import Scheduler
