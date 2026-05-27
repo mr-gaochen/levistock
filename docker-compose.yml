@@ -2,7 +2,12 @@ services:
   scheduler:
     build: .
     restart: unless-stopped
+    network_mode: host          # 共享宿主机网络，容器内 127.0.0.1 = 宿主机
     env_file:
       - .env
+    environment:
+      - HTTPS_PROXY=http://127.0.0.1:7890
+      - HTTP_PROXY=http://127.0.0.1:7890
+      - NO_PROXY=localhost,127.0.0.1
     volumes:
       - ./logs:/app/logs
