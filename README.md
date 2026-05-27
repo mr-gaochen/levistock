@@ -74,12 +74,30 @@ PG_DSN=postgresql://user:password@host:5432/dbname
 
 ### 3. Docker 启动
 
+#### 国内服务器（需要代理访问境外接口）
+
+`docker-compose.yml` 默认使用 `network_mode: host` + Clash 代理，容器与宿主机共享网络：
+
+```yaml
+services:
+  scheduler:
+    network_mode: host
+    environment:
+      - HTTPS_PROXY=http://127.0.0.1:7890   # Clash 默认端口，按实际修改
+      - HTTP_PROXY=http://127.0.0.1:7890
+      - NO_PROXY=localhost,127.0.0.1
+```
+
+无需代理时删除 `network_mode` 和 `environment` 中的 PROXY 配置即可。
+
+#### 启动命令
+
 ```bash
-# 构建镜像
+# 首次构建镜像（或修改了 pyproject.toml 新增依赖后）
 docker compose build
 
-# 后台启动（自动读取 .env）
-docker compose --env-file .env up -d
+# 后台启动
+docker compose up -d
 
 # 查看实时日志
 docker compose logs -f scheduler
@@ -87,6 +105,17 @@ docker compose logs -f scheduler
 # 停止
 docker compose down
 ```
+
+#### 修改代码后无需重新构建
+
+`levistock/` 目录和 `run_scheduler.py` 通过 volume 挂载进容器，改完代码只需重启：
+
+```bash
+# 修改代码后
+docker compose restart scheduler
+```
+
+> 只有新增 Python 依赖（改 `pyproject.toml`）时才需要重新 `docker compose build`。
 
 容器配置了 `restart: unless-stopped`，崩溃后自动重启，手动 `down` 才会停止。
 
@@ -141,8 +170,8 @@ python run_scheduler.py
 | 开盘红 | [get_pmsl](#get_pmsl) | 盘面梳理（板块事件流） | 复盘 |
 | 开盘红 | [get_his_limit_resumption](#get_his_limit_resumption) | 历史涨停复盘（含涨停原因） | 复盘 |
 | i问财 | [stock_strategy_wencai](#stock_strategy_wencai) | 自然语言策略查询 | 股票 |
-| 自有服务器 | [is_trade_day](#is_trade_day) | 判断今天是否为交易日 | 工具 |
-| 自有服务器 | [get_trade_days](#get_trade_days) | 获取近N个交易日 | 工具 |
+| 本地计算 | [is_trade_day](#is_trade_day) | 判断今天是否为交易日 | 工具 |
+| 本地计算 | [get_trade_days](#get_trade_days) | 获取近N个交易日 | 工具 |
 
 ---
 
@@ -1048,11 +1077,9 @@ for item in data:
 
 ### 工具 utils
 
-#### 自有服务器
-
 ##### `is_trade_day`
 
-判断今天是否为A股交易日。
+判断今天是否为 A 股交易日（以工作日近似，周一~周五返回 True）。
 
 ```python
 if lk.is_trade_day():
@@ -1061,13 +1088,13 @@ if lk.is_trade_day():
 
 | 返回值 | 说明 |
 |--------|------|
-| `bool` | True=交易日，False=非交易日 |
+| `bool` | True=交易日（工作日），False=非交易日（周末） |
 
 ---
 
 ##### `get_trade_days`
 
-获取近N个交易日列表。
+获取近 N 个工作日列表（含今天，从近到远排列）。
 
 | 参数 | 说明 |
 |------|------|
@@ -1080,7 +1107,7 @@ days = lk.get_trade_days(n=5)
 
 | 返回值 | 说明 |
 |--------|------|
-| `list[str]` | 交易日列表，格式 `"YYYYMMDD"`，从近到远排列 |
+| `list[str]` | 工作日列表，格式 `"YYYYMMDD"`，从近到远排列 |
 
 ---
 
