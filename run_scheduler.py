@@ -53,7 +53,7 @@ def job_stocks_spot(dsn: str):
 if __name__ == "__main__":
     (
         Scheduler(dsn=DSN)
-        .register(job_stocks_spot, interval_seconds=20, name="stock_spot", trading_only=True)
+        .register(job_stocks_spot, interval_seconds=60, name="stock_spot", trading_only=True)
         # .register(job_market_emotion, interval_seconds=300, name="market_emotion")
         .start()
     )
