@@ -10,4 +10,6 @@ services:
       - HTTP_PROXY=http://127.0.0.1:7890
       - NO_PROXY=localhost,127.0.0.1
     volumes:
+      - ./levistock:/app/levistock   # 代码热挂载，改代码只需 restart 不需要 build
+      - ./run_scheduler.py:/app/run_scheduler.py
       - ./logs:/app/logs
