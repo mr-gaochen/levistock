@@ -2,11 +2,16 @@
 PostgreSQL 存储工具
 
 用法:
-    from levistock.utils.db import save_stocks_spot
+    from levistock.utils.db import save_stocks_spot, save_sector_industry
 
     data = stocks_all_em()
     save_stocks_spot(data, dsn="postgresql://user:password@localhost:5432/dbname")
+
+    sector = sector_industry_cls()
+    save_sector_industry(sector, dsn="postgresql://user:password@localhost:5432/dbname")
 """
+
+import datetime
 
 import psycopg2
 import psycopg2.extras
@@ -133,6 +138,305 @@ def save_stocks_spot(data: list[dict], dsn: str, batch_size: int = 500) -> int:
             batch = cleaned[i: i + batch_size]
             with conn.cursor() as cur:
                 psycopg2.extras.execute_batch(cur, _UPSERT_SQL, batch, page_size=batch_size)
+            conn.commit()
+            total += len(batch)
+
+    return total
+
+
+# ── 行业板块（财联社） ────────────────────────────────────────────────────────────
+
+_CREATE_SECTOR_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS t_sector_daily_with_leading (
+    id                      SERIAL PRIMARY KEY,
+    data_date               DATE            NOT NULL,
+    secu_code               VARCHAR(20)     NOT NULL,
+    secu_name               VARCHAR(50)     NOT NULL,
+    change                  DECIMAL(10,4)   NOT NULL,
+    main_fund_diff          BIGINT          NOT NULL,
+    limit_up                INT             NOT NULL,
+    limit_down              INT             NOT NULL,
+    limit_up_num            INT             NOT NULL,
+    limit_down_num          INT             NOT NULL,
+    trade_status            VARCHAR(10)     NOT NULL,
+    first_stock_code        VARCHAR(20)     NOT NULL,
+    first_stock_name        VARCHAR(50)     NOT NULL,
+    first_stock_last_px     DECIMAL(10,2)   NOT NULL,
+    first_stock_change      DECIMAL(10,4)   NOT NULL,
+    first_stock_tr          DECIMAL(10,4)   NOT NULL,
+    first_stock_trade_status VARCHAR(10)    NOT NULL,
+    created_at              TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_sector_date UNIQUE (secu_code, data_date)
+);
+"""
+
+_UPSERT_SECTOR_SQL = """
+INSERT INTO t_sector_daily_with_leading (
+    data_date, secu_code, secu_name, change, main_fund_diff,
+    limit_up, limit_down, limit_up_num, limit_down_num, trade_status,
+    first_stock_code, first_stock_name, first_stock_last_px,
+    first_stock_change, first_stock_tr, first_stock_trade_status
+) VALUES (
+    %(data_date)s, %(secu_code)s, %(secu_name)s, %(change)s, %(main_fund_diff)s,
+    %(limit_up)s, %(limit_down)s, %(limit_up_num)s, %(limit_down_num)s, %(trade_status)s,
+    %(first_stock_code)s, %(first_stock_name)s, %(first_stock_last_px)s,
+    %(first_stock_change)s, %(first_stock_tr)s, %(first_stock_trade_status)s
+)
+ON CONFLICT (secu_code, data_date) DO UPDATE SET
+    secu_name                = EXCLUDED.secu_name,
+    change                   = EXCLUDED.change,
+    main_fund_diff           = EXCLUDED.main_fund_diff,
+    limit_up                 = EXCLUDED.limit_up,
+    limit_down               = EXCLUDED.limit_down,
+    limit_up_num             = EXCLUDED.limit_up_num,
+    limit_down_num           = EXCLUDED.limit_down_num,
+    trade_status             = EXCLUDED.trade_status,
+    first_stock_code         = EXCLUDED.first_stock_code,
+    first_stock_name         = EXCLUDED.first_stock_name,
+    first_stock_last_px      = EXCLUDED.first_stock_last_px,
+    first_stock_change       = EXCLUDED.first_stock_change,
+    first_stock_tr           = EXCLUDED.first_stock_tr,
+    first_stock_trade_status = EXCLUDED.first_stock_trade_status;
+"""
+
+
+def _flatten_sector(row: dict, data_date: datetime.date) -> dict:
+    fs = row.get("first_stock") or {}
+    return {
+        "data_date":               data_date,
+        "secu_code":               row.get("secu_code", ""),
+        "secu_name":               row.get("secu_name", ""),
+        "change":                  row.get("change", 0),
+        "main_fund_diff":          row.get("main_fund_diff", 0),
+        "limit_up":                row.get("limit_up", 0),
+        "limit_down":              row.get("limit_down", 0),
+        "limit_up_num":            row.get("limit_up_num", 0),
+        "limit_down_num":          row.get("limit_down_num", 0),
+        "trade_status":            row.get("trade_status", ""),
+        "first_stock_code":        fs.get("secu_code", ""),
+        "first_stock_name":        fs.get("secu_name", ""),
+        "first_stock_last_px":     fs.get("last_px", 0),
+        "first_stock_change":      fs.get("change", 0),
+        "first_stock_tr":          fs.get("tr", 0),
+        "first_stock_trade_status": fs.get("trade_status", ""),
+    }
+
+
+def save_sector_industry(data: list[dict], dsn: str, batch_size: int = 500) -> int:
+    """
+    将 sector_industry_cls() 返回的行业板块列表写入 t_sector_daily_with_leading 表。
+    同一板块同一交易日重复调用时执行 UPSERT（更新最新行情）。
+    """
+    if not data:
+        return 0
+
+    today = datetime.date.today()
+    rows = [_flatten_sector(r, today) for r in data]
+
+    with psycopg2.connect(dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute(_CREATE_SECTOR_TABLE_SQL)
+
+        total = 0
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i: i + batch_size]
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_batch(cur, _UPSERT_SECTOR_SQL, batch, page_size=batch_size)
+            conn.commit()
+            total += len(batch)
+
+    return total
+
+
+# ── 行业板块 5 分钟轨迹表 ──────────────────────────────────────────────────────
+
+_CREATE_SECTOR_INTRADAY_SQL = """
+CREATE TABLE IF NOT EXISTS t_sector_intraday_5min (
+    id                      BIGSERIAL PRIMARY KEY,
+    snapshot_time           TIMESTAMPTZ     NOT NULL,
+    secu_code               VARCHAR(20)     NOT NULL,
+    secu_name               VARCHAR(50)     NOT NULL,
+    change                  DECIMAL(10,4)   NOT NULL,
+    main_fund_diff          BIGINT          NOT NULL,
+    limit_up                INT             NOT NULL,
+    limit_down              INT             NOT NULL,
+    limit_up_num            INT             NOT NULL,
+    limit_down_num          INT             NOT NULL,
+    trade_status            VARCHAR(10)     NOT NULL,
+    first_stock_code        VARCHAR(20)     NOT NULL,
+    first_stock_name        VARCHAR(50)     NOT NULL,
+    first_stock_last_px     DECIMAL(10,2)   NOT NULL,
+    first_stock_change      DECIMAL(10,4)   NOT NULL,
+    first_stock_tr          DECIMAL(10,4)   NOT NULL,
+    first_stock_trade_status VARCHAR(10)    NOT NULL,
+    CONSTRAINT uk_sector_snapshot UNIQUE (secu_code, snapshot_time)
+);
+"""
+
+_INSERT_SECTOR_INTRADAY_SQL = """
+INSERT INTO t_sector_intraday_5min (
+    snapshot_time, secu_code, secu_name, change, main_fund_diff,
+    limit_up, limit_down, limit_up_num, limit_down_num, trade_status,
+    first_stock_code, first_stock_name, first_stock_last_px,
+    first_stock_change, first_stock_tr, first_stock_trade_status
+) VALUES (
+    %(snapshot_time)s, %(secu_code)s, %(secu_name)s, %(change)s, %(main_fund_diff)s,
+    %(limit_up)s, %(limit_down)s, %(limit_up_num)s, %(limit_down_num)s, %(trade_status)s,
+    %(first_stock_code)s, %(first_stock_name)s, %(first_stock_last_px)s,
+    %(first_stock_change)s, %(first_stock_tr)s, %(first_stock_trade_status)s
+)
+ON CONFLICT (secu_code, snapshot_time) DO NOTHING;
+"""
+
+
+def _flatten_sector_intraday(row: dict, snapshot_time: datetime.datetime) -> dict:
+    fs = row.get("first_stock") or {}
+    return {
+        "snapshot_time":           snapshot_time,
+        "secu_code":               row.get("secu_code", ""),
+        "secu_name":               row.get("secu_name", ""),
+        "change":                  row.get("change", 0),
+        "main_fund_diff":          row.get("main_fund_diff", 0),
+        "limit_up":                row.get("limit_up", 0),
+        "limit_down":              row.get("limit_down", 0),
+        "limit_up_num":            row.get("limit_up_num", 0),
+        "limit_down_num":          row.get("limit_down_num", 0),
+        "trade_status":            row.get("trade_status", ""),
+        "first_stock_code":        fs.get("secu_code", ""),
+        "first_stock_name":        fs.get("secu_name", ""),
+        "first_stock_last_px":     fs.get("last_px", 0),
+        "first_stock_change":      fs.get("change", 0),
+        "first_stock_tr":          fs.get("tr", 0),
+        "first_stock_trade_status": fs.get("trade_status", ""),
+    }
+
+
+def save_sector_intraday(data: list[dict], dsn: str, batch_size: int = 500) -> int:
+    """
+    将 sector_industry_cls() 返回的板块数据以 5 分钟快照形式追加到
+    t_sector_intraday_5min 表，用于查询全天资金流向轨迹。
+
+    snapshot_time 截断到分钟，重复写入同一时间点时静默忽略（DO NOTHING）。
+    """
+    if not data:
+        return 0
+
+    now = datetime.datetime.now().astimezone().replace(second=0, microsecond=0)
+    rows = [_flatten_sector_intraday(r, now) for r in data]
+
+    with psycopg2.connect(dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute(_CREATE_SECTOR_INTRADAY_SQL)
+
+        total = 0
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i: i + batch_size]
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_batch(cur, _INSERT_SECTOR_INTRADAY_SQL, batch, page_size=batch_size)
+            conn.commit()
+            total += len(batch)
+
+    return total
+
+
+# ── 涨停板股票池（东方财富） ───────────────────────────────────────────────────────
+
+_CREATE_ZT_POOL_SQL = """
+CREATE TABLE IF NOT EXISTS t_stock_zt_pool (
+    id              BIGSERIAL PRIMARY KEY,
+    date            DATE            NOT NULL,
+    stock_code      VARCHAR(10)     NOT NULL,
+    stock_name      VARCHAR(50),
+    market          VARCHAR(2),
+    price           DECIMAL(12,2),
+    change_pct      DECIMAL(8,4),
+    amount          BIGINT,
+    circ_market     DECIMAL(20,2),
+    circ_share      DECIMAL(20,2),
+    turnover_rate   DECIMAL(8,4),
+    continuous      INT,
+    first_zt_time   VARCHAR(10),
+    last_zt_time    VARCHAR(10),
+    main_inflow     BIGINT,
+    open_times      INT,
+    sector          VARCHAR(50),
+    zt_days         INT,
+    zt_count        INT,
+    updated_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    CONSTRAINT uk_zt_pool_code_date UNIQUE (stock_code, date)
+);
+"""
+
+_UPSERT_ZT_POOL_SQL = """
+INSERT INTO t_stock_zt_pool (
+    date, stock_code, stock_name, market, price, change_pct,
+    amount, circ_market, circ_share, turnover_rate,
+    continuous, first_zt_time, last_zt_time, main_inflow, open_times,
+    sector, zt_days, zt_count, updated_at
+) VALUES (
+    %(date)s, %(stock_code)s, %(stock_name)s, %(market)s, %(price)s, %(change_pct)s,
+    %(amount)s, %(circ_market)s, %(circ_share)s, %(turnover_rate)s,
+    %(continuous)s, %(first_zt_time)s, %(last_zt_time)s, %(main_inflow)s, %(open_times)s,
+    %(sector)s, %(zt_days)s, %(zt_count)s, NOW()
+)
+ON CONFLICT (stock_code, date) DO UPDATE SET
+    stock_name    = EXCLUDED.stock_name,
+    price         = EXCLUDED.price,
+    change_pct    = EXCLUDED.change_pct,
+    amount        = EXCLUDED.amount,
+    circ_market   = EXCLUDED.circ_market,
+    circ_share    = EXCLUDED.circ_share,
+    turnover_rate = EXCLUDED.turnover_rate,
+    continuous    = EXCLUDED.continuous,
+    first_zt_time = EXCLUDED.first_zt_time,
+    last_zt_time  = EXCLUDED.last_zt_time,
+    main_inflow   = EXCLUDED.main_inflow,
+    open_times    = EXCLUDED.open_times,
+    sector        = EXCLUDED.sector,
+    zt_days       = EXCLUDED.zt_days,
+    zt_count      = EXCLUDED.zt_count,
+    updated_at    = NOW();
+"""
+
+_ZT_NUMERIC_FIELDS = {
+    "price", "change_pct", "amount", "circ_market", "circ_share",
+    "turnover_rate", "continuous", "main_inflow", "open_times", "zt_days", "zt_count",
+}
+
+
+def _clean_zt_row(row: dict) -> dict:
+    out = dict(row)
+    raw_date = out.pop("date", None)
+    try:
+        out["date"] = datetime.datetime.strptime(str(raw_date), "%Y%m%d").date()
+    except (ValueError, TypeError):
+        out["date"] = datetime.date.today()
+    for field in _ZT_NUMERIC_FIELDS:
+        val = out.get(field)
+        if not isinstance(val, (int, float)):
+            out[field] = None
+    return out
+
+
+def save_stock_zt_pool(data: list[dict], dsn: str, batch_size: int = 500) -> int:
+    """
+    将 stock_zt_pool_em() 返回的涨停板股票池写入 t_stock_zt_pool 表。
+    同一股票同一交易日重复调用时 UPSERT 更新最新数据。
+    """
+    if not data:
+        return 0
+
+    rows = [_clean_zt_row(r) for r in data]
+
+    with psycopg2.connect(dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute(_CREATE_ZT_POOL_SQL)
+
+        total = 0
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i: i + batch_size]
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_batch(cur, _UPSERT_ZT_POOL_SQL, batch, page_size=batch_size)
             conn.commit()
             total += len(batch)
 

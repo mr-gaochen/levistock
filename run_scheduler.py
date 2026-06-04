@@ -16,8 +16,10 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+from levistock.sector.sector_cls import sector_industry_cls
 from levistock.stock.stock_em import stocks_all_em
-from levistock.utils.db import save_stocks_spot
+from levistock.stock.stock_ztdt_em import stock_zt_pool_em
+from levistock.utils.db import save_sector_industry, save_sector_intraday, save_stock_zt_pool, save_stocks_spot
 from levistock.utils.scheduler import Scheduler
 
 logging.basicConfig(
@@ -38,6 +40,20 @@ def job_stocks_spot(dsn: str):
     logging.getLogger(__name__).info("stock_spot  UPSERT %d 条", count)
 
 
+def job_sector_industry(dsn: str):
+    log = logging.getLogger(__name__)
+    data = sector_industry_cls()
+    c1 = save_sector_industry(data, dsn=dsn)
+    c2 = save_sector_intraday(data, dsn=dsn)
+    log.info("sector_industry  daily UPSERT %d 条 | intraday INSERT %d 条", c1, c2)
+
+
+def job_stock_zt_pool(dsn: str):
+    data = stock_zt_pool_em()
+    count = save_stock_zt_pool(data, dsn=dsn)
+    logging.getLogger(__name__).info("stock_zt_pool  UPSERT %d 条", count)
+
+
 # 新增任务示例（取消注释并实现即可）:
 #
 # from levistock.market.market_emotion_cls import market_emotion_cls
@@ -54,6 +70,8 @@ if __name__ == "__main__":
     (
         Scheduler(dsn=DSN)
         .register(job_stocks_spot, interval_seconds=60, name="stock_spot", trading_only=True)
+        .register(job_sector_industry, interval_seconds=120, name="sector_industry", trading_only=True)
+        .register(job_stock_zt_pool, interval_seconds=120, name="stock_zt_pool", trading_only=True)
         # .register(job_market_emotion, interval_seconds=300, name="market_emotion")
         .start()
     )

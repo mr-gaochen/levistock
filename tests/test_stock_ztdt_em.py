@@ -14,21 +14,27 @@ DATE_HISTORY = "20260513"   # 历史
 
 def test_stock_zt_pool_em():
     data = stock_zt_pool_em()
-    print(f"\n=== 今日涨停 ({len(data)}只) ===")
-    for item in data[:3]:
-        print(f"{item['stock_code']} {item['stock_name']} 连板:{item['continuous']} 换手:{item['turnover_rate']}%")
 
-    data_history = stock_zt_pool_em(date=DATE_HISTORY)
-    print(f"\n=== 历史涨停 {DATE_HISTORY} ({len(data_history)}只) ===")
-    if data_history:
-        print(f"第一条: {data_history[0]}")
-    else:
-        print("当日无涨停数据或非交易日")
+    print(data)
 
-    try:
-        stock_zt_pool_em(date="2026-05-13")
-    except ValueError as e:
-        print(f"\n日期格式错误: {e}")
+
+    {'date': '20260604', 'stock_code': '300897', 'stock_name': '山科智能', 'market': '0', 'price': 22.38, 'change_pct': 20.0, 'amount': 277911936, 'circ_market': 2736091137.54, 'circ_share': 4383038716.92, 'turnover_rate': 10.190627098083496, 'continuous': 1, 'first_zt_time': '92500', 'last_zt_time': '132251', 'main_inflow': 37837216, 'open_times': 1, 'sector': '通用设备', 'zt_days': 1, 'zt_count': 1}
+
+    # print(f"\n=== 今日涨停 ({len(data)}只) ===")
+    # for item in data[:3]:
+    #     print(f"{item['stock_code']} {item['stock_name']} 连板:{item['continuous']} 换手:{item['turnover_rate']}%")
+
+    # data_history = stock_zt_pool_em(date=DATE_HISTORY)
+    # print(f"\n=== 历史涨停 {DATE_HISTORY} ({len(data_history)}只) ===")
+    # if data_history:
+    #     print(f"第一条: {data_history[0]}")
+    # else:
+    #     print("当日无涨停数据或非交易日")
+
+    # try:
+    #     stock_zt_pool_em(date="2026-05-13")
+    # except ValueError as e:
+    #     print(f"\n日期格式错误: {e}")
 
 
 def test_stock_dt_pool_em():
@@ -52,5 +58,5 @@ def test_stock_yesterday_zt_em():
 
 if __name__ == "__main__":
     test_stock_zt_pool_em()
-    test_stock_dt_pool_em()
-    test_stock_yesterday_zt_em()
+    # test_stock_dt_pool_em()
+    # test_stock_yesterday_zt_em()
