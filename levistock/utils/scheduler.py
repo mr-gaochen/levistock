@@ -20,6 +20,7 @@
 
 import logging
 import datetime
+import time
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from levistock.utils.trade_day import is_trade_day
@@ -84,11 +85,17 @@ class Scheduler:
         启动调度器（阻塞当前线程）。
 
         Args:
-            check_trade_day: True 时在非交易日直接退出
+            check_trade_day: True 时在非交易日等待，直到下一个交易日开盘前再启动
         """
-        if check_trade_day and not is_trade_day():
-            logger.info("今日非交易日，调度器不启动")
-            return
+        if check_trade_day:
+            while not is_trade_day():
+                now = datetime.datetime.now()
+                next_check = (now + datetime.timedelta(days=1)).replace(
+                    hour=9, minute=0, second=0, microsecond=0
+                )
+                wait = (next_check - now).total_seconds()
+                logger.info("今日非交易日，等待 %.0f 秒至明日 09:00 重新检查", wait)
+                time.sleep(wait)
 
         logger.info("调度器启动")
         try:
