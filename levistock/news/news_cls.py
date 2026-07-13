@@ -194,6 +194,7 @@ def _format(items: list) -> list:
     for item in items:
         ctime = item.get("ctime", 0)
         result.append({
+            "id":      item.get("id"),
             "title":   item.get("title", ""),
             "content": item.get("content", ""),
             "time":    datetime.datetime.fromtimestamp(ctime).strftime("%Y-%m-%d %H:%M:%S"),

@@ -441,3 +441,87 @@ def save_stock_zt_pool(data: list[dict], dsn: str, batch_size: int = 500) -> int
             total += len(batch)
 
     return total
+
+
+# ── 财联社电报资讯 ─────────────────────────────────────────────────────────────
+
+_CREATE_NEWS_TELEGRAPH_SQL = """
+CREATE TABLE IF NOT EXISTS t_news_telegraph (
+    id              BIGINT          NOT NULL,
+    title           TEXT            NOT NULL,
+    content         TEXT            NOT NULL DEFAULT '',
+    post_time       TIMESTAMP       NOT NULL,
+    category        VARCHAR(20)     NOT NULL DEFAULT 'all',
+    created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id)
+);
+COMMENT ON TABLE  t_news_telegraph              IS '财联社电报资讯';
+COMMENT ON COLUMN t_news_telegraph.id           IS '电报ID';
+COMMENT ON COLUMN t_news_telegraph.title        IS '标题';
+COMMENT ON COLUMN t_news_telegraph.content      IS '正文内容';
+COMMENT ON COLUMN t_news_telegraph.post_time    IS '发布时间';
+COMMENT ON COLUMN t_news_telegraph.category     IS '分类：all/important/company';
+"""
+
+_UPSERT_NEWS_TELEGRAPH_SQL = """
+INSERT INTO t_news_telegraph (id, title, content, post_time, category)
+VALUES (%(id)s, %(title)s, %(content)s, %(post_time)s, %(category)s)
+ON CONFLICT (id) DO UPDATE SET
+    title     = EXCLUDED.title,
+    content   = EXCLUDED.content,
+    post_time = EXCLUDED.post_time,
+    category  = EXCLUDED.category;
+"""
+
+
+def save_news_telegraph(data: list[dict], dsn: str,
+                        category: str = "all", batch_size: int = 100) -> int:
+    """
+    将 news_telegraph_cls() 返回的电报列表写入 t_news_telegraph 表。
+
+    Args:
+        data:        电报字典列表
+        dsn:         PostgreSQL 连接串
+        category:    分类标签，默认 "all"
+        batch_size:  每批写入的记录数
+
+    Returns:
+        实际写入的记录数
+    """
+    if not data:
+        return 0
+
+    rows = []
+    for item in data:
+        tid = item.get("id")
+        # 跳过没有 id 的脏数据
+        if tid is None:
+            continue
+        try:
+            post_time = datetime.datetime.strptime(item.get("time", ""), "%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            post_time = None
+        # 跳过没有时间的脏数据（表字段 NOT NULL）
+        if post_time is None:
+            continue
+        rows.append({
+            "id":        tid,
+            "title":     item.get("title", ""),
+            "content":   item.get("content", ""),
+            "post_time": post_time,
+            "category":  category,
+        })
+
+    with psycopg2.connect(dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute(_CREATE_NEWS_TELEGRAPH_SQL)
+
+        total = 0
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i: i + batch_size]
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_batch(cur, _UPSERT_NEWS_TELEGRAPH_SQL, batch, page_size=batch_size)
+            conn.commit()
+            total += len(batch)
+
+    return total
